@@ -79,6 +79,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 import qrcode
+import requests
 from PIL import Image
 from backend.utils import generate_pdf_hash
 from backend.database import get_db, engine, Base
@@ -117,11 +118,20 @@ async def registrar_pdf(pdf: UploadFile = File(...), db: Session = Depends(get_d
         pdf_hash = generate_pdf_hash(pdf_bytes)
 
         # Obtener imagen aleatoria de la BD
-        query = text("SELECT nombre, datos FROM imagenes")
+        query = text("SELECT nombre, url FROM imagenes")
         imagenes = db.execute(query).fetchall()
         if not imagenes:
             return JSONResponse(content={"error": "No hay imágenes en la base de datos"}, status_code=500)
-        imagen_asociada_nombre, imagen_asociada_bytes = random.choice(imagenes)
+        imagen_asociada_nombre, imagen_asociada_url = random.choice(imagenes)
+        
+        # Descargar imagen desde Cloudinary
+        try:
+            imagen_response = requests.get(imagen_asociada_url, timeout=10)
+            imagen_response.raise_for_status()
+            imagen_asociada_bytes = imagen_response.content
+        except Exception as e:
+            print(f"Advertencia: No se pudo descargar imagen de {imagen_asociada_url}: {e}")
+            imagen_asociada_bytes = None
 
         # Guardar en tabla documentos
         insert_query = text(
@@ -163,12 +173,16 @@ async def registrar_pdf(pdf: UploadFile = File(...), db: Session = Depends(get_d
         qr_buffer.seek(0)
         c.drawInlineImage(Image.open(qr_buffer), qr_x, qr_y, width=qr_size, height=qr_size)
 
-        # Imagen asociada debajo del QR
-        imagen = Image.open(BytesIO(imagen_asociada_bytes))
-        imagen.thumbnail((200, 200))
-        img_x = width / 2 - imagen.width / 2
-        img_y = qr_y - imagen.height - 40
-        c.drawInlineImage(imagen, img_x, img_y, width=imagen.width, height=imagen.height)
+        # Imagen asociada debajo del QR (si se descargó correctamente)
+        if imagen_asociada_bytes:
+            try:
+                imagen = Image.open(BytesIO(imagen_asociada_bytes))
+                imagen.thumbnail((200, 200))
+                img_x = width / 2 - imagen.width / 2
+                img_y = qr_y - imagen.height - 40
+                c.drawInlineImage(imagen, img_x, img_y, width=imagen.width, height=imagen.height)
+            except Exception as e:
+                print(f"Advertencia: No se pudo dibujar imagen: {e}")
 
         # Pie de página
         c.setFont("Helvetica-Oblique", 10)

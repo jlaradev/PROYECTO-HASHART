@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import crud, schemas
+from ..cloudinary_utils import upload_image_to_cloudinary
 import hashlib, tempfile, qrcode, cv2, os
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
@@ -76,16 +77,6 @@ async def process(pdf: UploadFile = File(...), image: UploadFile = File(...), db
         with open(output_filename, "wb") as f:
             writer.write(f)
 
-        # Guardar en la base de datos
-        record_data = schemas.FileRecordCreate(
-            pdf_name=pdf.filename,
-            image_name=image.filename,
-            hash_value=final_hash,
-            pdf_path=pdf_path,
-            image_path=image_path,
-        )
-        crud.create_file_record(db, record_data)
-
         return FileResponse(output_filename, filename="PDF_with_QR.pdf")
 
     except Exception as e:
@@ -95,3 +86,44 @@ async def process(pdf: UploadFile = File(...), image: UploadFile = File(...), db
 @router.get("/records")
 def list_records(db: Session = Depends(get_db)):
     return crud.get_all_records(db)
+
+
+@router.post("/upload-image")
+async def upload_image(image: UploadFile = File(...), db: Session = Depends(get_db)):
+    """
+    Endpoint para subir una imagen a Cloudinary y guardarla en la BD.
+    
+    Args:
+        image: Archivo de imagen (PNG, JPG, etc)
+        db: Sesión de base de datos
+        
+    Returns:
+        JSON con los datos de la imagen guardada en BD y su URL en Cloudinary
+    """
+    try:
+        # Leer archivo de imagen
+        image_bytes = await image.read()
+        
+        # Subir a Cloudinary
+        image_url = upload_image_to_cloudinary(image_bytes, image.filename)
+        
+        # Crear registro en BD
+        imagen_create = schemas.ImagenCreate(
+            nombre=image.filename,
+            url=image_url,
+            salt=None
+        )
+        imagen_guardada = crud.crear_imagen(db, imagen_create)
+        
+        return {
+            "id": imagen_guardada.id,
+            "nombre": imagen_guardada.nombre,
+            "url": imagen_guardada.url,
+            "mensaje": "Imagen subida exitosamente a Cloudinary y guardada en BD"
+        }
+        
+    except Exception as e:
+        return JSONResponse(
+            content={"error": f"Error al subir imagen: {str(e)}"}, 
+            status_code=500
+        )

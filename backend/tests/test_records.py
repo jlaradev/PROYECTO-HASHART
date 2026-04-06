@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 from backend.main import app, get_db
-import backend.routes.files as files_mod
+from backend import crud
 
 client = TestClient(app)
 
@@ -19,7 +19,7 @@ class DummyDB:
 
 def test_records_returns_list():
     # Patch get_all_records to avoid DB
-    files_mod.crud.get_all_records = lambda db: [{"id": 1, "nombre": "a.pdf"}]
+    crud.get_all_records = lambda db: [{"id": 1, "nombre": "a.pdf"}]
     app.dependency_overrides[get_db] = lambda: DummyDB()
 
     response = client.get("/records")

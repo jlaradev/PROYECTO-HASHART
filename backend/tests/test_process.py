@@ -1,7 +1,6 @@
 import io
 from fastapi.testclient import TestClient
 from backend.main import app, get_db
-import backend.routes.files as files_mod
 from PIL import Image
 
 client = TestClient(app)
@@ -29,8 +28,6 @@ def make_png_bytes():
 
 
 def test_process_returns_pdf(tmp_path):
-    # Patch create_file_record to avoid DB/model calls
-    files_mod.crud.create_file_record = lambda db, data: None
     app.dependency_overrides[get_db] = lambda: DummyDB()
     # Usar PDF de fixtures subido por el usuario
     fixture_path = "backend/tests/fixtures/sample.pdf"

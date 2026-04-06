@@ -57,27 +57,3 @@ class Imagen(ImagenBase):
 
     class Config:
         from_attributes = True
-
-
-# ------------------------------
-# Schemas para registros de archivos (PDF + imagen procesada)
-# ------------------------------
-class FileRecordCreate(BaseModel):
-    pdf_name: str
-    image_name: str
-    hash_value: str
-    pdf_path: str
-    image_path: str
-
-
-class FileRecord(BaseModel):
-    id: int
-    pdf_name: str
-    image_name: str
-    hash_value: str
-    pdf_path: str
-    image_path: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
