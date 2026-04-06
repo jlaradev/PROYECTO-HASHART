@@ -1,9 +1,30 @@
 
-import psycopg2
 from dotenv import load_dotenv
 import os
-from fastapi import FastAPI
+import random
+import requests
+from io import BytesIO
 
+from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+import qrcode
+from PIL import Image
+
+from backend.utils import generate_pdf_hash
+from backend.database import get_db, engine, Base
+from backend import models, crud, schemas
+from backend.routes import files as files_router
+
+# Cargar variables de entorno desde .env
+load_dotenv()
+
+# Crear aplicación FastAPI
 app = FastAPI()
 
 # Endpoint raíz para health check
@@ -11,83 +32,18 @@ app = FastAPI()
 def health_check():
     return {"status": "ok"}
 
-# Asegurar registro explícito del endpoint raíz (compatibilidad con TestClient)
-app.add_api_route("/", endpoint=health_check, methods=["GET"])
-
-
-from fastapi import Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import os
-
-# Montar carpeta estática si existe y servir favicon desde allí
+# Montar carpeta estática si existe
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-
+# Servir favicon
 @app.get("/favicon.ico")
 def favicon():
     path = os.path.join(static_dir, "favicon.ico")
     if os.path.exists(path):
         return FileResponse(path, media_type="image/x-icon")
     return Response(status_code=204)
-
-# Cargar variables de entorno desde .env
-load_dotenv()
-
-# Obtener variables
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
-PORT = os.getenv("port")
-DBNAME = os.getenv("dbname")
-
-# Conectar a la base de datos
-try:
-    connection = psycopg2.connect(
-        user=USER,
-        password=PASSWORD,
-        host=HOST,
-        port=PORT,
-        dbname=DBNAME
-    )
-    print("Connection successful!")
-    
-    # Crear cursor para ejecutar consultas SQL
-    cursor = connection.cursor()
-    
-    # Consulta de ejemplo
-    cursor.execute("SELECT NOW();")
-    result = cursor.fetchone()
-    print("Current Time:", result)
-
-    # Cerrar cursor y conexión
-    cursor.close()
-    connection.close()
-    print("Connection closed.")
-
-except Exception as e:
-    print(f"Failed to connect: {e}")
-import random
-from fastapi import FastAPI, UploadFile, File, Depends
-from fastapi.responses import StreamingResponse, JSONResponse
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from io import BytesIO
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch
-import qrcode
-import requests
-from PIL import Image
-from backend.utils import generate_pdf_hash
-from backend.database import get_db, engine, Base
-from backend import models
-
-from fastapi.middleware.cors import CORSMiddleware
-from backend.routes import files as files_router
-
 
 # Dominios permitidos para CORS
 origins = [
@@ -113,16 +69,35 @@ app.include_router(files_router.router)
 @app.post("/registrar_pdf/")
 async def registrar_pdf(pdf: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        # Leer PDF y generar hash
+        # Leer PDF y validar
         pdf_bytes = await pdf.read()
+        
+        # Validar MIME type y tamaño
+        if pdf.content_type not in ("application/pdf", "application/x-pdf"):
+            return JSONResponse(content={"error": f"No es un PDF válido: {pdf.content_type}"}, status_code=400)
+        if len(pdf_bytes) > 50 * 1024 * 1024:  # 50MB
+            return JSONResponse(content={"error": "PDF muy grande (máx 50MB)"}, status_code=400)
+        
         pdf_hash = generate_pdf_hash(pdf_bytes)
 
         # Obtener imagen aleatoria de la BD
-        query = text("SELECT nombre, url FROM imagenes")
-        imagenes = db.execute(query).fetchall()
+        imagenes = crud.listar_imagenes(db)
         if not imagenes:
             return JSONResponse(content={"error": "No hay imágenes en la base de datos"}, status_code=500)
-        imagen_asociada_nombre, imagen_asociada_url = random.choice(imagenes)
+        imagen = random.choice(imagenes)
+        imagen_asociada_nombre = imagen.nombre
+        imagen_asociada_url = imagen.url
+        
+        # Validar que URL sea HTTPS y no apunte a redes internas (prevenir SSRF)
+        if not imagen_asociada_url.startswith("https://"):
+            print(f"Advertencia: URL de imagen no es HTTPS: {imagen_asociada_url}")
+            return JSONResponse(content={"error": "URL de imagen debe ser HTTPS"}, status_code=500)
+        
+        # Rechazar direcciones locales/privadas
+        suspicious_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "169.254", "10.", "172.16", "192.168"]
+        if any(host in imagen_asociada_url for host in suspicious_hosts):
+            print(f"Advertencia: URL de imagen sospechosa: {imagen_asociada_url}")
+            return JSONResponse(content={"error": "URL de imagen no válida"}, status_code=500)
         
         # Descargar imagen desde Cloudinary
         try:
@@ -134,16 +109,12 @@ async def registrar_pdf(pdf: UploadFile = File(...), db: Session = Depends(get_d
             imagen_asociada_bytes = None
 
         # Guardar en tabla documentos
-        insert_query = text(
-            "INSERT INTO documentos (nombre, hash_pdf, imagen_asociada) "
-            "VALUES (:nombre, :hash_pdf, :imagen_asociada)"
+        documento_create = schemas.DocumentoCreate(
+            nombre=pdf.filename,
+            hash_pdf=pdf_hash,
+            imagen_asociada=imagen_asociada_nombre
         )
-        db.execute(insert_query, {
-            "nombre": pdf.filename,
-            "hash_pdf": pdf_hash,
-            "imagen_asociada": imagen_asociada_nombre
-        })
-        db.commit()
+        crud.crear_documento(db, documento_create)
 
         # Generar QR con la URL hacia el frontend de Railway
         verification_url = f"https://proyectohashart-front-production.up.railway.app/upload?hash={pdf_hash}"
@@ -213,11 +184,10 @@ async def verificar_pdf(pdf: UploadFile = File(...), db: Session = Depends(get_d
         pdf_hash = generate_pdf_hash(pdf_bytes)
 
         # Buscar el documento en la tabla 'documentos'
-        query_doc = text("SELECT id FROM documentos WHERE hash_pdf = :hash_pdf")
-        result = db.execute(query_doc, {"hash_pdf": pdf_hash}).fetchone()
+        documento = crud.obtener_documento_por_hash(db, pdf_hash)
 
-        if result:
-            documento_id = result[0]
+        if documento:
+            documento_id = documento.id
             resultado = True
         else:
             documento_id = None
@@ -225,11 +195,11 @@ async def verificar_pdf(pdf: UploadFile = File(...), db: Session = Depends(get_d
 
         # Guardar la verificación si el documento existe
         if documento_id:
-            insert_verificacion = text(
-                "INSERT INTO verificaciones (documento_id, resultado) VALUES (:documento_id, :resultado)"
+            verificacion_create = schemas.VerificacionCreate(
+                documento_id=documento_id,
+                resultado=resultado
             )
-            db.execute(insert_verificacion, {"documento_id": documento_id, "resultado": resultado})
-            db.commit()
+            crud.crear_verificacion(db, verificacion_create)
 
         return JSONResponse(content={"hash": pdf_hash, "valido": resultado})
 

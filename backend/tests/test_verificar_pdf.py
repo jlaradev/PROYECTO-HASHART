@@ -2,26 +2,45 @@ import io
 from fastapi.testclient import TestClient
 from backend.main import app, get_db
 from backend.utils import generate_pdf_hash
+from backend import models
 
 client = TestClient(app)
+
+class MockQuery:
+    def __init__(self, items):
+        self._items = items
+    
+    def filter(self, *args, **kwargs):
+        # For mock purposes, assume filtering by hash_pdf
+        return self
+    
+    def first(self):
+        return self._items[0] if self._items else None
 
 class DummyDB:
     def __init__(self, existing_hash=None):
         self.existing_hash = existing_hash
-    def execute(self, query, params=None):
-        class Res:
-            def __init__(self, rows):
-                self._rows = rows
-            def fetchone(self):
-                return self._rows[0] if self._rows else None
-            def fetchall(self):
-                return self._rows
-        q = str(query).lower()
-        if "select id from documentos" in q:
-            if params and params.get("hash_pdf") == self.existing_hash:
-                return Res([(1,)])
-            return Res([])
-        return Res([])
+        self._stored_items = []
+    
+    def query(self, model):
+        if model == models.Documento:
+            # Return matching documento by hash if it exists
+            if self.existing_hash:
+                doc = models.Documento()
+                doc.id = 1
+                doc.hash_pdf = self.existing_hash
+                doc.nombre = "test.pdf"
+                doc.imagen_asociada = "img1"
+                return MockQuery([doc])
+            return MockQuery([])
+        return MockQuery([])
+    
+    def add(self, obj):
+        self._stored_items.append(obj)
+    
+    def refresh(self, obj):
+        pass
+    
     def commit(self):
         pass
 

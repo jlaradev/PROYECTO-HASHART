@@ -1,56 +1,70 @@
 import io
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from backend.main import app, get_db
+from backend import models
 
 client = TestClient(app)
 
+class MockQuery:
+    def __init__(self, items):
+        self._items = items
+    
+    def filter(self, *args, **kwargs):
+        return self
+    
+    def first(self):
+        return self._items[0] if self._items else None
+    
+    def offset(self, skip):
+        return self
+    
+    def limit(self, limit):
+        return self
+    
+    def all(self):
+        return self._items
+
 class DummyDB:
-    def execute(self, query, params=None):
-        class Res:
-            def __init__(self, rows):
-                self._rows = rows
-            def fetchall(self):
-                return self._rows
-            def fetchone(self):
-                return self._rows[0] if self._rows else None
-        q = str(query).lower()
-        if "from imagenes" in q:
-            # Leer imagen real subida por el usuario
-            try:
-                with open("backend/tests/fixtures/sample_image.png", "rb") as imgf:
-                    png = imgf.read()
-                return Res([("img1", png)])
-            except Exception:
-                # fallback: return empty list so caller vea que no hay imagenes
-                return Res([])
-        return Res([])
+    def __init__(self):
+        self._stored_items = []
+        self._imagenes = []
+        # Create mock imagen
+        img = models.Imagen()
+        img.id = 1
+        img.nombre = "img1"
+        img.url = "https://test.com/img1.png"
+        img.salt = None
+        self._imagenes.append(img)
+    
+    def query(self, model):
+        if model == models.Imagen:
+            return MockQuery(self._imagenes)
+        return MockQuery([])
+    
+    def add(self, obj):
+        self._stored_items.append(obj)
+    
+    def refresh(self, obj):
+        pass
+    
     def commit(self):
         pass
 
 
 def test_registrar_pdf_returns_pdf():
-    app.dependency_overrides[get_db] = lambda: DummyDB()
-    pdf_bytes = b"%PDF-1.4 test"
-    files = {"pdf": ("test.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
-    # Logs para depuración
-    # Ver qué devuelve DummyDB para la imagen asociada
-    db = app.dependency_overrides[get_db]()
-    res = db.execute("SELECT nombre, datos FROM imagenes")
-    rows = res.fetchall()
-    print("TEST LOG: imagenes_rows=", rows)
-    if rows:
-        nombre, datos = rows[0]
-        print("TEST LOG: imagen_bytes_len=", len(datos))
+    # Mock requests.get para que no intente descargar imágenes reales
+    mock_response = MagicMock()
+    mock_response.content = b"fake image bytes"
+    mock_response.raise_for_status = MagicMock()
+    
+    with patch("backend.main.requests.get", return_value=mock_response):
+        app.dependency_overrides[get_db] = lambda: DummyDB()
+        pdf_bytes = b"%PDF-1.4 test"
+        files = {"pdf": ("test.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
 
-    response = client.post("/registrar_pdf/", files=files)
-    print("TEST LOG: status_code=", response.status_code)
-    try:
-        print("TEST LOG: json=", response.json())
-    except Exception:
-        print("TEST LOG: text=", response.text[:1000])
-    print("TEST LOG: headers=", dict(response.headers))
-    print("TEST LOG: content_len=", len(response.content))
+        response = client.post("/registrar_pdf/", files=files)
 
-    assert response.status_code == 200
-    assert response.headers.get("content-type") == "application/pdf"
-    app.dependency_overrides.clear()
+        assert response.status_code == 200
+        assert response.headers.get("content-type") == "application/pdf"
+        app.dependency_overrides.clear()

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, Text, func,LargeBinary
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, Text, func
 from sqlalchemy.orm import relationship
 from backend.database import Base
 
@@ -22,8 +22,7 @@ class Verificacion(Base):
     fecha_verificacion = Column(TIMESTAMP, server_default=func.now())
 
     documento = relationship("Documento", back_populates="verificaciones")
-from sqlalchemy import Column, Integer, String, LargeBinary
-from .database import Base
+
 
 class Imagen(Base):
     __tablename__ = "imagenes"
