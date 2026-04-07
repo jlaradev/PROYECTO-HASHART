@@ -31,6 +31,19 @@ load_dotenv()
 # Crear aplicación FastAPI
 app = FastAPI()
 
+# Dominios permitidos para CORS desde variables de entorno
+cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+origins = [origin.strip() for origin in cors_origins_str.split(",")]
+
+# AGREGAR CORS MIDDLEWARE PRIMERO (antes de cualquier endpoint)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS", "PUT"],
+    allow_headers=["*"],
+)
+
 # Función auxiliar para convertir timestamps a zona horaria de Bogotá
 def to_bogota_time(dt):
     """Convierte datetime UTC a zona horaria de Bogotá (America/Bogota, UTC-5)"""
@@ -85,20 +98,6 @@ def favicon():
     if os.path.exists(path):
         return FileResponse(path, media_type="image/x-icon")
     return Response(status_code=204)
-
-# Dominios permitidos para CORS
-origins = [
-    "http://localhost:3000",
-    "https://proyectohashart-front-production.up.railway.app",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
 
 # Crear tablas si no existen
 Base.metadata.create_all(bind=engine)

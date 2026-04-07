@@ -1,7 +1,5 @@
-import io
 from fastapi.testclient import TestClient
 from backend.main import app, get_db
-from PIL import Image
 import uuid
 
 client = TestClient(app)
@@ -23,17 +21,17 @@ class DummyDB:
 
 def test_upload_image():
     """Test del endpoint POST /upload-image."""
-    # Generar una imagen pequeña de prueba
-    buf = io.BytesIO()
-    img = Image.new("RGB", (50, 50), color=(100, 150, 200))
-    img.save(buf, format="PNG")
-    buf.seek(0)
+    # Usar imagen de fixtures
+    fixture_path = "backend/tests/fixtures/sample_image.png"
+    
+    with open(fixture_path, "rb") as f:
+        image_bytes = f.read()
     
     # Usar nombre único para evitar violación de constraint UNIQUE
     unique_filename = f"test_upload_{uuid.uuid4().hex[:8]}.png"
     
     files = {
-        "image": (unique_filename, buf, "image/png"),
+        "image": (unique_filename, image_bytes, "image/png"),
     }
     
     response = client.post("/upload-image", files=files)
