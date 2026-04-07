@@ -5,7 +5,7 @@ psycopg2-binary
 python-dotenv
 pillow
 pyzbar
-opencv-python
+opencv-python-headless
 numpy
 requests
 PyPDF2
