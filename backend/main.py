@@ -65,7 +65,7 @@ def cleanup_temp_files(*paths):
                 pass
 
 # Endpoint raíz para health check
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def health_check(db: Session = Depends(get_db)):
     try:
         # Intentar obtener la fecha del servidor de la BD para validar conexión
