@@ -15,7 +15,8 @@ def crear_documento(db: Session, documento: schemas.DocumentoCreate):
     nuevo = models.Documento(
         nombre=documento.nombre,
         hash_pdf=documento.hash_pdf,
-        imagen_asociada=documento.imagen_asociada
+        imagen_id=documento.imagen_id,
+        hash_final=documento.hash_final
     )
     db.add(nuevo)
     db.commit()
@@ -57,8 +58,7 @@ def listar_verificaciones(db: Session, documento_id: int):
 def crear_imagen(db: Session, imagen: schemas.ImagenCreate):
     nueva = models.Imagen(
         nombre=imagen.nombre,
-        url=imagen.url,
-        salt=imagen.salt
+        url=imagen.url
     )
     db.add(nueva)
     db.commit()

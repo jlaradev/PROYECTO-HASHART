@@ -71,76 +71,6 @@ def generate_sha256_hash(data):
     sha256.update(data.encode())
     return sha256.hexdigest()
 
-@router.post("/process", response_class=FileResponse)
-async def process(pdf: UploadFile = File(...), image: UploadFile = File(...), db: Session = Depends(get_db)):
-    request_id = uuid.uuid4().hex
-    pdf_path = None
-    image_path = None
-    qr_file = None
-    output_filename = None
-    
-    try:
-        # Validar PDF
-        pdf_bytes = await pdf.read()
-        is_valid, error_msg = validate_pdf_file(pdf.content_type or "", len(pdf_bytes))
-        if not is_valid:
-            return JSONResponse(content={"error": error_msg}, status_code=400)
-        
-        # Validar imagen
-        image_bytes = await image.read()
-        is_valid, error_msg = validate_image_file(image.filename or "image", image.content_type or "", len(image_bytes))
-        if not is_valid:
-            return JSONResponse(content={"error": error_msg}, status_code=400)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_tmp:
-            pdf_tmp.write(pdf_bytes)
-            pdf_path = pdf_tmp.name
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as img_tmp:
-            img_tmp.write(image_bytes)
-            image_path = img_tmp.name
-
-        pdf_hash = get_pdf_sha256_hash(pdf_path)
-        salt = get_deterministic_salt(image_path)
-        combined_data = pdf_hash + salt
-        final_hash = generate_sha256_hash(combined_data)
-
-        qr_pdf_stream = BytesIO()
-        c = canvas.Canvas(qr_pdf_stream, pagesize=letter)
-        qr_file = f"{tempfile.gettempdir()}/qr_{request_id}.png"
-        qrcode.make(final_hash).save(qr_file)
-        c.drawImage(qr_file, 150, 400, width=300, height=300)
-        c.setFont("Helvetica", 12)
-        c.drawCentredString(300, 380, "SHA256 PDF+Image Hash")
-        c.drawCentredString(300, 365, final_hash[:32])
-        c.drawCentredString(300, 350, final_hash[32:])
-        c.showPage()
-        c.save()
-        qr_pdf_stream.seek(0)
-
-        original_pdf = PdfReader(pdf_path)
-        qr_pdf = PdfReader(qr_pdf_stream)
-        writer = PdfWriter()
-        for page in original_pdf.pages:
-            writer.add_page(page)
-        writer.add_page(qr_pdf.pages[0])
-
-        output_filename = f"{tempfile.gettempdir()}/PDF_with_QR_{request_id}.pdf"
-        with open(output_filename, "wb") as f:
-            writer.write(f)
-
-        return FileResponse(output_filename, filename="PDF_with_QR.pdf")
-
-    except Exception as e:
-        # Limpiar archivos temporales en caso de error
-        for filepath in [pdf_path, image_path, qr_file, output_filename]:
-            if filepath and os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                except OSError:
-                    pass
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
 
 @router.get("/records")
 def list_records(db: Session = Depends(get_db)):
@@ -183,8 +113,7 @@ async def upload_image(image: UploadFile = File(...), db: Session = Depends(get_
         # Crear registro en BD
         imagen_create = schemas.ImagenCreate(
             nombre=image.filename,
-            url=image_url,
-            salt=None
+            url=image_url
         )
         imagen_guardada = crud.crear_imagen(db, imagen_create)
         

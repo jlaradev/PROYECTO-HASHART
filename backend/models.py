@@ -8,10 +8,12 @@ class Documento(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(255), nullable=False)
     hash_pdf = Column(Text, nullable=False)
-    imagen_asociada = Column(String(255), nullable=False)
+    imagen_id = Column(Integer, ForeignKey("imagenes.id", ondelete="SET NULL"), nullable=True)
+    hash_final = Column(Text, nullable=True)  # SHA256(hash_pdf + salt) para verificación robusta
     creado_en = Column(TIMESTAMP, server_default=func.now())
 
     verificaciones = relationship("Verificacion", back_populates="documento")
+    imagen = relationship("Imagen", back_populates="documentos")
 
 class Verificacion(Base):
     __tablename__ = "verificaciones"
@@ -30,4 +32,5 @@ class Imagen(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, unique=True, nullable=False)
     url = Column(String, nullable=False)  # Aquí se guarda la URL de la imagen
-    salt = Column(String, nullable=True)        # Para guardar el salt asociado
+    
+    documentos = relationship("Documento", back_populates="imagen")

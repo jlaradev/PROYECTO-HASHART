@@ -2,6 +2,7 @@ import io
 from fastapi.testclient import TestClient
 from backend.main import app, get_db
 from PIL import Image
+import uuid
 
 client = TestClient(app)
 
@@ -28,8 +29,11 @@ def test_upload_image():
     img.save(buf, format="PNG")
     buf.seek(0)
     
+    # Usar nombre único para evitar violación de constraint UNIQUE
+    unique_filename = f"test_upload_{uuid.uuid4().hex[:8]}.png"
+    
     files = {
-        "image": ("test_upload.png", buf, "image/png"),
+        "image": (unique_filename, buf, "image/png"),
     }
     
     response = client.post("/upload-image", files=files)
@@ -42,8 +46,14 @@ def test_upload_image():
         assert "url" in json_response
         assert json_response["url"].startswith("https://")
         assert "cloudinary" in json_response["url"]
-        print(f"✓ Imagen subida a Cloudinary: {json_response['url']}")
+        
+        print(f"\n✓ POST /upload-image Successful")
+        print(f"  • Status Code: {response.status_code}")
+        print(f"  • Filename: {json_response['nombre']}")
+        print(f"  • Image ID: {json_response['id']}")
+        print(f"  • URL: {json_response['url']}")
     else:
         # Si falla, revisar que sea por credenciales de Cloudinary
-        print(f"Status: {response.status_code}")
-        print(f"Response: {response.json()}")
+        print(f"\n✗ POST /upload-image Failed")
+        print(f"  • Status: {response.status_code}")
+        print(f"  • Response: {response.json()}")

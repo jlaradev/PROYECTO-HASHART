@@ -24,6 +24,12 @@ def test_records_returns_list():
 
     response = client.get("/records")
     assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    data = response.json()
+    assert isinstance(data, list)
+    
+    print(f"\n✓ GET /records Successful")
+    print(f"  • Status Code: {response.status_code}")
+    print(f"  • Records Count: {len(data)}")
+    print(f"  • Records: {data}")
 
     app.dependency_overrides.clear()

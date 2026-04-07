@@ -21,3 +21,4 @@ Pillow
 aiofiles
 cloudinary
 pytest
+pytz

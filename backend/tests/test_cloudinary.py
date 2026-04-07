@@ -17,11 +17,15 @@ def test_cloudinary_upload_with_file():
         assert url.startswith("https://")
         assert "cloudinary" in url
         
-        print(f"✓ Imagen de fixtures subida a: {url}")
+        print(f"\n✓ Cloudinary Upload Successful")
+        print(f"  • Filename: {filename}")
+        print(f"  • File Size: {len(image_bytes)} bytes")
+        print(f"  • URL: {url}")
         
         # Limpiar
         public_id = f"proyecto-hashart/imagenes/{filename.split('.')[0]}"
         delete_image_from_cloudinary(public_id)
+        print(f"  • Cleanup: Image deleted from Cloudinary")
         
     except FileNotFoundError:
         pytest.skip(f"No existe archivo en {fixture_path}. Crea la imagen ahí si quieres este test.")
